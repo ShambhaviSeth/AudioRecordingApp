@@ -11,7 +11,7 @@ import SwiftUI
 struct AudioRecordingAppApp: App {
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            VoiceRecorderView()
         }
     }
 }
