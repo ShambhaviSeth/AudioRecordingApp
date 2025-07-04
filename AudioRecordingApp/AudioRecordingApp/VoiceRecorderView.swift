@@ -8,10 +8,27 @@ import SwiftData
 struct VoiceRecorderView: View {
     @Environment(\.modelContext) private var modelContext
     @StateObject private var engineManager = VoiceRecorderViewModel.shared
+    @State private var searchText: String = ""
+    @ObservedObject private var networkMonitor = NetworkMonitor()
     @Query(sort: \RecordingSession.createdAt, order: .reverse) var sessions: [RecordingSession]
 
     @State private var selectedSession: RecordingSession?
     @State private var showingTranscriptionDetail = false
+
+    var filteredSessions: [RecordingSession] {
+        if searchText.isEmpty {
+            return sessions
+        }
+        return sessions.filter { $0.title.lowercased().contains(searchText.lowercased()) }
+    }
+
+    var groupedSessions: [String: [RecordingSession]] {
+        Dictionary(grouping: filteredSessions) { session in
+            let formatter = DateFormatter()
+            formatter.dateStyle = .medium
+            return formatter.string(from: session.createdAt)
+        }
+    }
 
     var body: some View {
         NavigationView {
@@ -43,6 +60,11 @@ struct VoiceRecorderView: View {
 
                 LevelMeter(level: engineManager.currentPower)
 
+                Text(networkMonitor.isConnected ? "Online" : "Offline")
+                    .font(.caption)
+                    .foregroundColor(networkMonitor.isConnected ? .green : .red)
+                    .accessibilityLabel(networkMonitor.isConnected ? "Online" : "Offline")
+
                 Divider().padding(.vertical)
 
                 HStack {
@@ -57,25 +79,38 @@ struct VoiceRecorderView: View {
                     .font(.caption)
                     .foregroundColor(.blue)
                 }
-                .padding(.horizontal)
+
+                TextField("Search", text: $searchText)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .padding(.horizontal)
+                    .accessibilityLabel("Search recordings")
 
                 if sessions.isEmpty {
                     Text("No recordings found")
                         .foregroundColor(.gray)
                 } else {
                     List {
-                        ForEach(sessions) { session in
-                            RecordingSessionRow(
-                                session: session,
-                                onPlay: {
-                                    RecordingManager.shared.playRecording(url: session.audioFileURL)
-                                },
-                                onViewTranscription: {
-                                    selectedSession = session
-                                    showingTranscriptionDetail = true
+                        ForEach(groupedSessions.keys.sorted(), id: \.self) { date in
+                            Section(header: Text(date).accessibilityAddTraits(.isHeader)) {
+                                ForEach(groupedSessions[date] ?? []) { session in
+                                    RecordingSessionRow(
+                                        session: session,
+                                        onPlay: {
+                                            engineManager.currentlyPlaying = session.audioFileURL
+                                            RecordingManager.shared.playRecording(url: session.audioFileURL)
+                                        },
+                                        onViewTranscription: {
+                                            selectedSession = session
+                                            showingTranscriptionDetail = true
+                                        }
+                                    )
                                 }
-                            )
+                            }
                         }
+                    }
+                    .listStyle(.plain)
+                    .refreshable {
+                        TranscriptionManager.shared.loadSegments(from: modelContext)
                     }
                 }
 
@@ -87,7 +122,8 @@ struct VoiceRecorderView: View {
                     TranscriptionDetailView(session: session)
                 }
             }
-        }.onAppear {
+        }
+        .onAppear {
             TranscriptionManager.shared.loadSegments(from: modelContext)
         }
     }
@@ -98,29 +134,38 @@ struct RecordingSessionRow: View {
     let onPlay: () -> Void
     let onViewTranscription: () -> Void
 
+    @State private var isPlaying = false
+
     var body: some View {
         HStack {
-            VStack(alignment: .leading) {
-                Text(session.title)
-                    .font(.subheadline)
-                Text(session.createdAt, style: .date)
-                    .font(.caption)
-                    .foregroundColor(.gray)
-            }
+            Text(session.title)
+                .font(.subheadline)
 
             Spacer()
 
-            Button(action: onPlay) {
-                Image(systemName: "play.fill")
+            Button(action: {
+                isPlaying.toggle()
+                onPlay()
+            }) {
+                Image(systemName: isPlaying ? "pause.fill" : "play.fill")
                     .foregroundColor(.blue)
             }
             .buttonStyle(PlainButtonStyle())
+            .accessibilityLabel(isPlaying ? "Pause recording" : "Play recording")
 
             Button(action: onViewTranscription) {
                 Image(systemName: "doc.text")
                     .foregroundColor(.green)
             }
             .buttonStyle(PlainButtonStyle())
+            .accessibilityLabel("View transcription")
+        }
+        .swipeActions {
+            Button(role: .destructive) {
+                RecordingManager.shared.deleteRecording(url: session.audioFileURL)
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
         }
     }
 }

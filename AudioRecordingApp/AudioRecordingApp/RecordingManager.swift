@@ -34,12 +34,20 @@ class RecordingManager: ObservableObject {
     }
 
     func playRecording(url: URL) {
-        do {
-            audioPlayer = try AVAudioPlayer(contentsOf: url)
-            audioPlayer?.prepareToPlay()
-            audioPlayer?.play()
-        } catch {
-            print("Failed to play recording: \(error)")
+        if audioPlayer?.url == url {
+            if let player = audioPlayer, player.isPlaying {
+                player.pause()
+            } else {
+                audioPlayer?.play()
+            }
+        } else {
+            do {
+                audioPlayer = try AVAudioPlayer(contentsOf: url)
+                audioPlayer?.prepareToPlay()
+                audioPlayer?.play()
+            } catch {
+                print("Failed to play recording: \(error)")
+            }
         }
     }
 
@@ -47,6 +55,18 @@ class RecordingManager: ObservableObject {
         do {
             try FileManager.default.removeItem(at: url)
             fetchRecordings()
+
+            DispatchQueue.main.async {
+                let segmentsToDelete = TranscriptionManager.shared.segments.filter { $0.audioURL == url }
+
+                for segment in segmentsToDelete {
+                    if let session = segment.session {
+                        session.segments.removeAll { $0.id == segment.id }
+                    }
+                }
+
+                TranscriptionManager.shared.segments.removeAll { $0.audioURL == url }
+            }
         } catch {
             print("Failed to delete recording: \(error)")
         }

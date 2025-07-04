@@ -26,6 +26,7 @@ class VoiceRecorderViewModel: ObservableObject {
     private var recordingStartTime: Date?
 
     @Published var currentPower: Float = 0.0
+    @Published var currentlyPlaying: URL? = nil
     private var levelTimer: Timer?
 
 
@@ -52,7 +53,7 @@ class VoiceRecorderViewModel: ObservableObject {
 
     //Begins a new audio recording session
     func startRecording(context: ModelContext) throws {
-        self.modelContext = context // ✅ Store context
+        self.modelContext = context
         try configureSession()
 
         let format = engine.inputNode.outputFormat(forBus: 0)
@@ -127,6 +128,16 @@ class VoiceRecorderViewModel: ObservableObject {
             self.currentRecordingID = nil
             self.currentRecordingURL = nil
         }
+    }
+
+    func pauseRecording() {
+        engine.pause()
+        isRecording.send(false)
+    }
+
+    func resumeRecording() throws {
+        try engine.start()
+        isRecording.send(true)
     }
 
     private func startMonitoring() {
