@@ -1,13 +1,12 @@
+////  VoiceRecorderViewModel.swift
+////  AudioRecordingApp
+////
+////  Created by Shambhavi Seth on 7/2/25.
 //
-//  VoiceRecorderViewModel.swift
-//  AudioRecordingApp
-//
-//  Created by Shambhavi Seth on 7/2/25.
-//
-
 import AVFoundation
 import Combine
 import SwiftUI
+import SwiftData
 
 class VoiceRecorderViewModel: ObservableObject {
     static let shared = VoiceRecorderViewModel()
@@ -16,10 +15,11 @@ class VoiceRecorderViewModel: ObservableObject {
     private let mixer = AVAudioMixerNode()
     private var outputFile: AVAudioFile?
     private var cancellables = Set<AnyCancellable>()
-    
+
     // Current recording tracking
     private var currentRecordingID: String?
     private var currentRecordingURL: URL?
+    private var modelContext: ModelContext?
 
     private(set) var audioSession = AVAudioSession.sharedInstance()
     private(set) var isRecording = CurrentValueSubject<Bool, Never>(false)
@@ -28,12 +28,6 @@ class VoiceRecorderViewModel: ObservableObject {
     @Published var currentPower: Float = 0.0
     private var levelTimer: Timer?
 
-    struct Settings {
-        var sampleRate: Double = 44100
-        var bitDepth: AVAudioCommonFormat = .pcmFormatInt16
-        var format: AudioFormatID = kAudioFormatMPEG4AAC
-    }
-    var settings = Settings()
 
     private init() {
         setupNotifications()
@@ -57,19 +51,20 @@ class VoiceRecorderViewModel: ObservableObject {
     }
 
     //Begins a new audio recording session
-    func startRecording() throws {
+    func startRecording(context: ModelContext) throws {
+        self.modelContext = context // ✅ Store context
         try configureSession()
 
         let format = engine.inputNode.outputFormat(forBus: 0)
-        
-        // Generate unique recording ID
+
+        //Generate unique recording ID
         currentRecordingID = UUID().uuidString
 
         //Create a unique file name
         let outputURL = FileManager.default
             .urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Recording-\(currentRecordingID!).m4a")
-        
+
         currentRecordingURL = outputURL
         outputFile = try AVAudioFile(forWriting: outputURL, settings: format.settings)
 
@@ -90,49 +85,59 @@ class VoiceRecorderViewModel: ObservableObject {
         startMonitoring()
     }
 
-    //Ends the current recording session
-    func stopRecording() {
+    func stopRecording(context: ModelContext? = nil) {
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         isRecording.send(false)
-        outputFile = nil
         stopMonitoring()
-        
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            self.outputFile = nil
+
+            guard let context = context ?? self.modelContext else {
+                print("ModelContext not available for saving")
+                return
+            }
+
             if let recordingID = self.currentRecordingID,
                let recordingURL = self.currentRecordingURL {
+                let session = RecordingSession(title: "Recording-\(recordingID)", audioFileURL: recordingURL)
+                context.insert(session)
+
+                do {
+                    try context.save()
+                    print("Session saved to SwiftData")
+                } catch {
+                    print("Failed to save session: \(error)")
+                }
                 Task {
                     do {
                         try await TranscriptionManager.shared.segmentAudio(
                             from: recordingURL,
-                            recordingID: recordingID
+                            recordingID: recordingID,
+                            session: session,
+                            modelContext: context
                         )
                     } catch {
                         print("Error processing transcription: \(error)")
                     }
                 }
             }
-            
+
             self.currentRecordingID = nil
             self.currentRecordingURL = nil
-            RecordingManager.shared.fetchRecordings()
         }
     }
 
-
-    //Starts a timer that periodically reads audio power levels from the input buffer
     private func startMonitoring() {
-        levelTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { _ in
-        }
+        levelTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { _ in }
     }
 
-    //Stops level monitoring and resets power
     private func stopMonitoring() {
         levelTimer?.invalidate()
         currentPower = 0.0
     }
 
-    //Computes audio power level from buffer and updates the UI.
     private func updateLevels(buffer: AVAudioPCMBuffer) {
         guard let channelData = buffer.floatChannelData?[0] else { return }
 
@@ -145,7 +150,6 @@ class VoiceRecorderViewModel: ObservableObject {
         }
     }
 
-    //Handles system interruptions like phone calls or Siri
     private func handleInterruption(_ notification: Notification) {
         guard let userInfo = notification.userInfo,
               let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
@@ -153,21 +157,20 @@ class VoiceRecorderViewModel: ObservableObject {
 
         switch type {
         case .began:
-            print("Interruption began — stopping recording")
+            print("Interruption began - stopping recording")
             stopRecording()
         case .ended:
             try? configureSession()
             if let options = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt,
                AVAudioSession.InterruptionOptions(rawValue: options).contains(.shouldResume) {
                 print("Resuming recording after interruption")
-                try? startRecording()
+                try? startRecording(context: self.modelContext!)
             }
         default:
             break
         }
     }
 
-    //Handles audio route changes like plugging/unplugging headphones
     private func handleRouteChange(_ notification: Notification) {
         guard let userInfo = notification.userInfo,
               let reasonValue = userInfo[AVAudioSessionRouteChangeReasonKey] as? UInt,
@@ -175,7 +178,7 @@ class VoiceRecorderViewModel: ObservableObject {
 
         switch reason {
         case .oldDeviceUnavailable:
-            print("Headphones unplugged — stopping recording")
+            print("Headphones unplugged - stopping recording")
             stopRecording()
         case .newDeviceAvailable:
             print("New audio device available")

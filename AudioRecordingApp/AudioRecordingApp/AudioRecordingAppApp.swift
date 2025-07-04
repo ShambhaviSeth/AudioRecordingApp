@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import SwiftData
 
 @main
 struct AudioRecordingAppApp: App {
@@ -13,5 +14,6 @@ struct AudioRecordingAppApp: App {
         WindowGroup {
             VoiceRecorderView()
         }
+        .modelContainer(for: [RecordingSession.self, TranscriptionSegment.self])
     }
 }

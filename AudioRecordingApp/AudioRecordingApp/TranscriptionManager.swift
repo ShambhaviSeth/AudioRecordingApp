@@ -2,27 +2,8 @@ import Foundation
 import AVFoundation
 import Speech
 import Network
+import SwiftData
 
-// MARK: - Models
-struct TranscriptionSegment {
-    let id: UUID
-    let audioURL: URL
-    let startTime: TimeInterval
-    let endTime: TimeInterval
-    let recordingID: String
-    var transcription: String?
-    var status: TranscriptionStatus
-    var retryCount: Int
-    var createdAt: Date
-}
-
-enum TranscriptionStatus {
-    case pending
-    case processing
-    case completed
-    case failed
-    case queued
-}
 
 struct TranscriptionResult {
     let segmentId: UUID
@@ -118,59 +99,58 @@ class TranscriptionManager: ObservableObject {
         }
     }
     
-    //Audio Segmentation
-    func segmentAudio(from fileURL: URL, recordingID: String) async throws {
+    func segmentAudio(from fileURL: URL, recordingID: String, session: RecordingSession, modelContext: ModelContext) async throws {
         let audioFile = try AVAudioFile(forReading: fileURL)
         let format = audioFile.processingFormat
         let totalFrames = audioFile.length
         let sampleRate = format.sampleRate
         let totalDuration = Double(totalFrames) / sampleRate
-        
+
+        let segmentDuration: TimeInterval = 30.0
         let segmentFrames = AVAudioFrameCount(segmentDuration * sampleRate)
         var currentFrame: AVAudioFramePosition = 0
         var segmentIndex = 0
-        
+
         while currentFrame < totalFrames {
             let remainingFrames = totalFrames - currentFrame
             let framesToRead = min(segmentFrames, AVAudioFrameCount(remainingFrames))
-            
-            //Create segment file
-            let segmentURL = createSegmentURL(recordingID: recordingID, segmentIndex: segmentIndex)
+
+            let segmentURL = FileManager.default
+                .urls(for: .documentDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("segment-\(recordingID)-\(segmentIndex).m4a")
+
             let segmentFile = try AVAudioFile(forWriting: segmentURL, settings: format.settings)
-            
-            //Read and write segment
+
             audioFile.framePosition = currentFrame
             let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: framesToRead)!
             try audioFile.read(into: buffer, frameCount: framesToRead)
             try segmentFile.write(from: buffer)
-            
-            //Create segment object
+
             let startTime = Double(currentFrame) / sampleRate
             let endTime = min(startTime + segmentDuration, totalDuration)
-            
+
             let segment = TranscriptionSegment(
-                id: UUID(),
-                audioURL: segmentURL,
                 startTime: startTime,
                 endTime: endTime,
-                recordingID: recordingID,
                 transcription: nil,
                 status: .pending,
                 retryCount: 0,
-                createdAt: Date()
+                session: session,
+                segmentURL: segmentURL
             )
-            
+
             DispatchQueue.main.async {
+                modelContext.insert(segment)
+                try? modelContext.save()
                 self.segments.append(segment)
+                self.queueSegmentForTranscription(segment)
             }
-            
-            //Queue for transcription
-            queueSegmentForTranscription(segment)
-            
+
             currentFrame += AVAudioFramePosition(framesToRead)
             segmentIndex += 1
         }
     }
+
     
     private func createSegmentURL(recordingID: String, segmentIndex: Int, suffix: String = "") -> URL {
         let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -325,9 +305,13 @@ class TranscriptionManager: ObservableObject {
 
     private func handleTranscriptionSuccess(_ segment: TranscriptionSegment, result: TranscriptionResult) {
         DispatchQueue.main.async {
-            if let index = self.segments.firstIndex(where: { $0.id == segment.id }) {
-                self.segments[index].transcription = result.text
-                self.segments[index].status = .completed
+            segment.transcription = result.text
+            segment.status = .completed
+            do {
+                try segment.modelContext?.save()
+                print("Transcription saved for segment \(segment.id)")
+            } catch {
+                print("Failed to save segment: \(error)")
             }
         }
         
@@ -392,7 +376,9 @@ class TranscriptionManager: ObservableObject {
     }
     
     func getTranscriptionForRecording(_ recordingID: String) -> String {
-        let recordingSegments = segments.filter { $0.recordingID == recordingID && $0.status == .completed }
+        let recordingSegments = segments.filter {
+            $0.session?.id.uuidString == recordingID && $0.status == .completed
+        }
         return recordingSegments
             .sorted { $0.startTime < $1.startTime }
             .compactMap { $0.transcription }
@@ -408,6 +394,22 @@ class TranscriptionManager: ObservableObject {
     
     func clearCompletedSegments() {
         segments.removeAll { $0.status == .completed }
+    }
+    
+    func loadSegments(from context: ModelContext) {
+        do {
+            let descriptor = FetchDescriptor<TranscriptionSegment>()
+            let allSegments = try context.fetch(descriptor)
+
+            DispatchQueue.main.async {
+                self.segments = allSegments
+                for segment in allSegments where segment.status == .pending || segment.status == .queued {
+                    self.queueSegmentForTranscription(segment)
+                }
+            }
+        } catch {
+            print("Failed to load segments: \(error)")
+        }
     }
 }
 
