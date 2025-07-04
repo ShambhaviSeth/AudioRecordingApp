@@ -68,7 +68,7 @@ class TranscriptionManager: ObservableObject {
     private let networkMonitor = NetworkMonitor()
     private let segmentDuration: TimeInterval = 30.0
     private let maxRetries = 5
-    private let apiKey = "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"
+    private let apiKey = "<YOUR_API_KEY>"
     
     private var processingQueue = DispatchQueue(label: "transcription.processing", qos: .userInitiated)
     private var pendingSegments: [TranscriptionSegment] = []
