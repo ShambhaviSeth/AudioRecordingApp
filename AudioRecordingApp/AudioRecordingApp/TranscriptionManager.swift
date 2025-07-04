@@ -152,7 +152,7 @@ class TranscriptionManager: ObservableObject {
     }
 
     
-    private func createSegmentURL(recordingID: String, segmentIndex: Int, suffix: String = "") -> URL {
+    func createSegmentURL(recordingID: String, segmentIndex: Int, suffix: String = "") -> URL {
         let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         return documentsURL.appendingPathComponent("segment-\(recordingID)-\(segmentIndex)\(suffix).m4a")
     }

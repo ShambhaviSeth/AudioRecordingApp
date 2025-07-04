@@ -52,11 +52,12 @@ struct VoiceRecorderView: View {
                             .foregroundColor(.white)
                             .font(.system(size: 40))
                     }
-                }
+                }.accessibilityIdentifier("recordButton")
 
                 Text(engineManager.isRecording.value ? "Recording..." : "Tap to Record")
                     .font(.headline)
                     .foregroundColor(.gray)
+                    .accessibilityIdentifier("recordingStatusLabel")
 
                 LevelMeter(level: engineManager.currentPower)
 

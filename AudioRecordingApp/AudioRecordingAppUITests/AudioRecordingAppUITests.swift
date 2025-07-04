@@ -9,33 +9,57 @@ import XCTest
 
 final class AudioRecordingAppUITests: XCTestCase {
 
-    override func setUpWithError() throws {
-        // Put setup code here. This method is called before the invocation of each test method in the class.
+        var app: XCUIApplication!
 
-        // In UI tests it is usually best to stop immediately when a failure occurs.
-        continueAfterFailure = false
+        override func setUpWithError() throws {
+            continueAfterFailure = false
+            app = XCUIApplication()
+            app.launchArguments.append("--uitesting")
+            app.launch()
+        }
 
-        // In UI tests it’s important to set the initial state - such as interface orientation - required for your tests before they run. The setUp method is a good place to do this.
-    }
+        func testStartAndStopRecording() {
+            let recordButton = app.buttons["recordButton"]
+            XCTAssertTrue(recordButton.waitForExistence(timeout: 5))
+            recordButton.tap()
 
-    override func tearDownWithError() throws {
-        // Put teardown code here. This method is called after the invocation of each test method in the class.
-    }
+            let recordingLabel = app.staticTexts["recordingStatusLabel"]
+            XCTAssertTrue(recordingLabel.waitForExistence(timeout: 5))
+            XCTAssertEqual(recordingLabel.label, "Recording...")
 
-    @MainActor
-    func testExample() throws {
-        // UI tests must launch the application that they test.
-        let app = XCUIApplication()
-        app.launch()
+            recordButton.tap()
+            XCTAssertEqual(recordingLabel.label, "Tap to Record")
+        }
 
-        // Use XCTAssert and related functions to verify your tests produce the correct results.
-    }
+        func testSearchRecordings() {
+            let searchField = app.textFields["Search recordings"]
+            XCTAssertTrue(searchField.waitForExistence(timeout: 5))
+            searchField.tap()
+            searchField.typeText("Meeting")
+            XCTAssertFalse(app.staticTexts["Meeting Notes"].exists)
+        }
 
-    @MainActor
-    func testLaunchPerformance() throws {
-        // This measures how long it takes to launch your application.
-        measure(metrics: [XCTApplicationLaunchMetric()]) {
-            XCUIApplication().launch()
+        func testRetryFailedTranscriptionsButton() {
+            let retryButton = app.buttons["Retry Failed"]
+            XCTAssertTrue(retryButton.waitForExistence(timeout: 5))
+            retryButton.tap()
+        }
+
+
+        func testPlayRecording() {
+            let playButtons = app.buttons.matching(identifier: "Play recording")
+            if playButtons.count > 0 {
+                let playButton = playButtons.firstMatch
+                XCTAssertTrue(playButton.exists)
+                playButton.tap()
+                XCTAssertFalse(playButton.exists)
+            }
+        }
+
+        func testNetworkStatusIndicator() {
+            let onlineLabel = app.staticTexts["Online"]
+            let offlineLabel = app.staticTexts["Offline"]
+
+            XCTAssertTrue(onlineLabel.exists || offlineLabel.exists)
         }
     }
-}

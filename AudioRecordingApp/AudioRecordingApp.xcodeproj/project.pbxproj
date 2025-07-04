@@ -30,6 +30,13 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		4A73577B2E1856B5009BCC79 /* Exceptions for "AudioRecordingAppUITests" folder in "AudioRecordingAppTests" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				testAudio.m4a,
+			);
+			target = 4A25426B2E14D75200AFA04D /* AudioRecordingAppTests */;
+		};
 		4AFD45EA2E15B4460056C855 /* Exceptions for "AudioRecordingApp" folder in "AudioRecordingApp" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -55,6 +62,9 @@
 		};
 		4A2542792E14D75200AFA04D /* AudioRecordingAppUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				4A73577B2E1856B5009BCC79 /* Exceptions for "AudioRecordingAppUITests" folder in "AudioRecordingAppTests" target */,
+			);
 			path = AudioRecordingAppUITests;
 			sourceTree = "<group>";
 		};
