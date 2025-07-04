@@ -16,6 +16,10 @@ class VoiceRecorderViewModel: ObservableObject {
     private let mixer = AVAudioMixerNode()
     private var outputFile: AVAudioFile?
     private var cancellables = Set<AnyCancellable>()
+    
+    // Current recording tracking
+    private var currentRecordingID: String?
+    private var currentRecordingURL: URL?
 
     private(set) var audioSession = AVAudioSession.sharedInstance()
     private(set) var isRecording = CurrentValueSubject<Bool, Never>(false)
@@ -57,12 +61,16 @@ class VoiceRecorderViewModel: ObservableObject {
         try configureSession()
 
         let format = engine.inputNode.outputFormat(forBus: 0)
+        
+        // Generate unique recording ID
+        currentRecordingID = UUID().uuidString
 
         //Create a unique file name
         let outputURL = FileManager.default
             .urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Recording-\(UUID().uuidString).m4a")
-
+            .appendingPathComponent("Recording-\(currentRecordingID!).m4a")
+        
+        currentRecordingURL = outputURL
         outputFile = try AVAudioFile(forWriting: outputURL, settings: format.settings)
 
         //Start recording using a tap on the input node
@@ -89,7 +97,26 @@ class VoiceRecorderViewModel: ObservableObject {
         isRecording.send(false)
         outputFile = nil
         stopMonitoring()
-        RecordingManager.shared.fetchRecordings()
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            if let recordingID = self.currentRecordingID,
+               let recordingURL = self.currentRecordingURL {
+                Task {
+                    do {
+                        try await TranscriptionManager.shared.segmentAudio(
+                            from: recordingURL,
+                            recordingID: recordingID
+                        )
+                    } catch {
+                        print("Error processing transcription: \(error)")
+                    }
+                }
+            }
+            
+            self.currentRecordingID = nil
+            self.currentRecordingURL = nil
+            RecordingManager.shared.fetchRecordings()
+        }
     }
 
 

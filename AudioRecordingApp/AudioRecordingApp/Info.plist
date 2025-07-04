@@ -18,5 +18,9 @@
     <array>
         <string>audio</string>
     </array>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>This app needs microphone access to record audio</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>This app uses speech recognition for transcription fallback</string>
 </dict>
 </plist>
