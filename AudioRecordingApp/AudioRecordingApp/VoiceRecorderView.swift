@@ -33,8 +33,6 @@ struct VoiceRecorderView: View {
     var body: some View {
         NavigationView {
             VStack(spacing: 20) {
-                Spacer()
-
                 Button(action: {
                     if engineManager.isRecording.value {
                         engineManager.stopRecording(context: modelContext)
@@ -45,32 +43,37 @@ struct VoiceRecorderView: View {
                     ZStack {
                         Circle()
                             .fill(engineManager.isRecording.value ? Color.red : Color.blue)
-                            .frame(width: 100, height: 100)
+                            .frame(width: 80, height: 80)
                             .shadow(radius: 10)
 
                         Image(systemName: engineManager.isRecording.value ? "stop.fill" : "mic.fill")
                             .foregroundColor(.white)
                             .font(.system(size: 40))
                     }
-                }.accessibilityIdentifier("recordButton")
+                }
+                .padding(.top)
+                .accessibilityIdentifier("recordButton")
+                .accessibilityLabel(engineManager.isRecording.value ? "Stop recording" : "Start recording")
 
                 Text(engineManager.isRecording.value ? "Recording..." : "Tap to Record")
                     .font(.headline)
                     .foregroundColor(.gray)
-                    .accessibilityIdentifier("recordingStatusLabel")
+                    .accessibilityLabel(engineManager.isRecording.value ? "Currently recording" : "Ready to record")
 
                 LevelMeter(level: engineManager.currentPower)
+                    .accessibilityLabel("Recording level meter")
 
                 Text(networkMonitor.isConnected ? "Online" : "Offline")
                     .font(.caption)
                     .foregroundColor(networkMonitor.isConnected ? .green : .red)
-                    .accessibilityLabel(networkMonitor.isConnected ? "Online" : "Offline")
+                    .accessibilityLabel("Network status: \(networkMonitor.isConnected ? "Online" : "Offline")")
 
-                Divider().padding(.vertical)
+                Divider()
 
                 HStack {
                     Text("Recordings")
                         .font(.headline)
+                        .accessibilityAddTraits(.isHeader)
 
                     Spacer()
 
@@ -79,7 +82,9 @@ struct VoiceRecorderView: View {
                     }
                     .font(.caption)
                     .foregroundColor(.blue)
+                    .accessibilityLabel("Retry failed transcriptions")
                 }
+                .padding(.horizontal)
 
                 TextField("Search", text: $searchText)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
@@ -89,10 +94,18 @@ struct VoiceRecorderView: View {
                 if sessions.isEmpty {
                     Text("No recordings found")
                         .foregroundColor(.gray)
+                        .accessibilityLabel("No recordings found")
                 } else {
-                    List {
-                        ForEach(groupedSessions.keys.sorted(), id: \.self) { date in
-                            Section(header: Text(date).accessibilityAddTraits(.isHeader)) {
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 8) {
+                            ForEach(groupedSessions.keys.sorted(), id: \.self) { date in
+                                Text(date)
+                                    .font(.subheadline)
+                                    .padding(.horizontal)
+                                    .padding(.top, 8)
+                                    .accessibilityAddTraits(.isHeader)
+                                    .accessibilityLabel("Recordings from \(date)")
+
                                 ForEach(groupedSessions[date] ?? []) { session in
                                     RecordingSessionRow(
                                         session: session,
@@ -105,13 +118,13 @@ struct VoiceRecorderView: View {
                                             showingTranscriptionDetail = true
                                         }
                                     )
+                                    .padding(.horizontal)
                                 }
                             }
                         }
-                    }
-                    .listStyle(.plain)
-                    .refreshable {
-                        TranscriptionManager.shared.loadSegments(from: modelContext)
+                        .refreshable {
+                            TranscriptionManager.shared.loadSegments(from: modelContext)
+                        }
                     }
                 }
 
